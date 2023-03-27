@@ -34,14 +34,8 @@ declare -A key_value_combinations
 filename=""
 file_extension=""
 file_dir_path=""
-file_absolute_path=""
-
-# flag variables
-skip_conversion=false
-override_all=false
-skip_search=false
-has_file_formats_given=false
-show_filename_only=false
+prototype_file_path=""
+destination_file_path=""
 
 # log functions
 function error() {
@@ -133,7 +127,7 @@ function print_arr() {
 
 function get_absolute_path() {
     local file=$1
-    file_absolute_path=$(readlink -f "$fvalue")
+    prototype_file_path=$(readlink -f "$fvalue")
 }
 
 function print_dictionary() {
@@ -141,6 +135,14 @@ function print_dictionary() {
 
     for key in ${!dict[@]}; do
         echo "[$key]=${dict[$key]}"
+    done
+}
+
+function replace_env_variables() {
+    cp "$prototype_file_path" "$destination_file_path"
+
+    for key in ${!key_value_combinations[@]}; do
+        sed -i "s/<$key>/${key_value_combinations[$key]}/" $destination_file_path
     done
 }
 
@@ -162,13 +164,20 @@ while :; do
         exit 0
         ;;
     -f | --file)
-        fvalue="$2"
-        if is_str_empty $fvalue; then
+        prototype_file="$2"
+        if is_str_empty $prototype_file; then
             error "Please specify file path!"
             exit 1
         fi
 
-        get_absolute_path "$fvalue"
+        destination_file="$3"
+        if is_str_empty $destination_file; then
+            error "Please specify destination file path!"
+            exit 1
+        fi
+
+        prototype_file_path=$(readlink -f "$prototype_file")
+        destination_file_path=$(readlink -f "$destination_file")
 
         all_arguments=("$@")
         for ((index = 0; index < ${#all_arguments[@]}; index++)); do
@@ -182,6 +191,8 @@ while :; do
                 ;;
             esac
         done
+
+        replace_env_variables "$(declare -p key_value_combinations)"
 
         exit 0
         ;;
