@@ -15,7 +15,7 @@ KF_VERSION='v1.1.3'
 DOC_URL='https://github.com/mammadyahyayev/keyword-replacer'
 
 # constant variables
-SUPPORTED_FILE_FORMATS=("docx" "pdf")
+SUPPORTED_FILE_FORMATS=("yaml")
 AUTHOR="Mammad Yahyayev"
 AUTHOR_DESC="I am a passionate developer and I love open source projects."
 AUTHOR_GITHUB_URL="https://github.com/mammadyahyayev"
@@ -36,6 +36,8 @@ file_extension=""
 file_dir_path=""
 prototype_file_path=""
 destination_file_path=""
+directory_path=""
+is_append=false
 
 # log functions
 function error() {
@@ -139,10 +141,82 @@ function print_dictionary() {
 }
 
 function replace_env_variables() {
-    cp "$prototype_file_path" "$destination_file_path"
-
     for key in ${!key_value_combinations[@]}; do
         sed -i "s/<$key>/${key_value_combinations[$key]}/" $destination_file_path
+    done
+}
+
+function build_find_command() {
+    cd "$directory_path"
+    local formats=("$@")
+    local len=${#formats[@]}
+
+    command="find . -type f \("
+    for i in "${!formats[@]}"; do
+        command="${command} -iname '[0-9]*\.${formats[$i]}'"
+        local result=$(expr $len - 1)
+        if [[ $i -ne result ]]; then
+            command="${command} -o"
+        fi
+    done
+
+    command="${command} \) -printf '%f\n'"
+}
+
+function collect_directory_files() {
+    temp_arr=()
+    local formats=("$@")
+    build_find_command "${formats[@]}"
+
+    OIFS="$IFS"
+    IFS=$'\n'
+    for file in $(eval $command); do
+        temp_arr+=("$file")
+    done
+    IFS="$OIFS"
+}
+
+function collect_original_files() {
+    local file_formats=("$@")
+
+    if [[ ${#file_formats[@]} == 0 ]]; then
+        file_formats=("${SUPPORTED_FILE_FORMATS[@]}")
+    fi
+
+    collect_directory_files "${file_formats[@]}"
+
+    for file in "${temp_arr[@]}"; do
+        local file_path="$directory_path/$file"
+        files+=("$file_path")
+    done
+
+    temp_arr=()
+}
+
+function show_collected_files() {
+    local collected_file_count="${#files[@]}"
+    success "${collected_file_count} file(s) collected"
+    for file in "${files[@]}"; do
+        if $show_filename_only; then
+            local filename=$(basename "$file")
+            success "==> $filename"
+        else
+            success "==> $file"
+        fi
+    done
+    print_newline 1
+}
+
+function export_files() {
+    info "Newly created file path: $destination_file_path"
+
+    if [[ $is_append == false ]]; then
+        rm "$destination_file_path"
+    fi    
+
+    for file in "${files[@]}"; do
+        cat "$file" >>"$destination_file_path"
+        echo -e "\n\n---\n\n" >>"$destination_file_path"
     done
 }
 
@@ -161,6 +235,56 @@ while :; do
         echo $GREEN"Bio:$NORMAL         $CYAN==>$NORMAL $AUTHOR_DESC"
         echo $GREEN"Github:$NORMAL      $CYAN==>$NORMAL $AUTHOR_GITHUB_URL"
         echo $GREEN"Linkedin:$NORMAL    $CYAN==>$NORMAL $AUTHOR_LINKEDIN_URL"
+        exit 0
+        ;;
+    -d | --dir)
+        dvalue="$2"
+        if is_str_empty $dvalue; then
+            error "Please specify directory path where you want to search your keyword!"
+            exit 1
+        else
+            directory_path=$(readlink -f "$dvalue")
+        fi
+
+        directory_path="${directory_path//'\'/'/'}"
+
+        if [ ! -d "$directory_path" ]; then
+            error "Directory [ $directory_path ] not exist or incorrect"
+            exit 1
+        fi
+
+        destination_file="$3"
+        if is_str_empty $destination_file; then
+            error "Please specify destination file path!"
+            exit 1
+        fi
+
+        destination_file_path=$(readlink -f "$destination_file")
+
+        all_arguments=("$@")
+        for ((index = 0; index < ${#all_arguments[@]}; index++)); do
+            case "${all_arguments[index]}" in
+            -c | --combination)
+                combination="${all_arguments[index + 1]}"
+                IFS=$KEY_VALUE_SEPARATOR read -r -a array <<<"$combination"
+                key="${array[0]}"
+                value="${array[1]}"
+                key_value_combinations["$key"]="$value"
+                shift
+                ;;
+            -a | --append)
+                is_append=true
+                ;;
+            esac
+        done
+
+        collect_original_files
+        show_collected_files
+
+        export_files
+
+        replace_env_variables "$(declare -p key_value_combinations)"
+
         exit 0
         ;;
     -f | --file)
@@ -192,6 +316,7 @@ while :; do
             esac
         done
 
+        cp "$prototype_file_path" "$destination_file_path"
         replace_env_variables "$(declare -p key_value_combinations)"
 
         exit 0
