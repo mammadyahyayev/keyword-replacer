@@ -210,7 +210,7 @@ function show_collected_files() {
 function export_files() {
     info "Newly created file path: $destination_file_path"
 
-    if [[ $is_append == false ]]; then
+    if [[ $is_append == false ]] && [[ -f "$destination_file_path" ]]; then
         rm "$destination_file_path"
     fi    
 
